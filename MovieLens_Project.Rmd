@@ -1,0 +1,34 @@
+---
+title: "Movie recommendation system: Predicting movie ratings in the MovieLens dataset"
+output: html_notebook
+---
+
+# Introduction
+
+[Describe the dataset]
+
+[Describe the goal]
+
+[Summarize the steps]
+
+```{r}
+
+```
+
+# Method
+
+## Data cleaning
+
+## Data exploration
+
+## Modeling
+
+# Results and Discussions
+
+## Results
+
+## Discussions
+
+# Conclusion
+
+## Limitations and suggestions for future work

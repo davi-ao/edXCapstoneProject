@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+ml-10M100K/
+edx.csv
+validation.csv
+MovieLens_Dataset.R
+MovieLens_Project.nb.html
