@@ -283,7 +283,7 @@ y_hat = mean(train_set$rating)
 RMSE(test_set$rating, y_hat)
 ```
 
-## Second model
+##Second model
 
 The second model includes the effect of movies. As already known and describe in @Irizarry, movies are rated differently because of variability in their qualities. Thus, to the second model is added the movie effect ($m_i$) with $m_i$ being the average of the difference between de mean of ratings and the mean of the particular movie $i$, that is $Y_{j,i}=\mu+m_i+\epsilon_{j,i}$ with $m_i=\frac{1}{N_m}\sum_i^{N_m}Y_{j,i}-\hat{\mu}$. The inclusion of the movie effect reduced the RMSE to 0.9440327.
 
@@ -293,7 +293,33 @@ m_i = train_set %>%
   group_by(movieId) %>% 
   summarise(m_i = mean(rating - mean(train_set$rating)))
 
-# Predictions from the second model. The test set is used only to create a vector of predictions of the same size as the rating vector of the test set with the corresponding movie ids
+# Add m_i to the train set to be used in next steps
+train_set = train_set %>%
+  left_join(m_i, by = 'movieId')
+
+# Predictions from the second model. The test set is used only to create a vector of predictions with the same size as the test set's rating vector with the corresponding movie ids
 y_hat = mean(train_set$rating) + (test_set %>% left_join(m_i, by='movieId') %>% .$m_i)
+
+RMSE(test_set$rating, y_hat)
+```
+
+##Third model
+
+The third model adds the effect of users. As already known, different users rates movies differently. User effect is defined as the average rating of the users minus the mean of ratings and the movie effect. The third model is then defined as $Y_{j,i}=\mu+m_i+u_j+\epsilon_{j,i}$ with $u_i=\frac{1}{N_u}\sum_i^{N_u}Y_{j,i}-\hat{\mu}-m_i$.
+
+```{r}
+# The user effect is defined as the average of ratings by each user minus the mean of ratings and the movie effect
+
+u_i = train_set %>%
+  group_by(userId) %>%
+  summarize(u_i = mean(rating - mean(train_set$rating) - m_i))
+
+# Predictions from the third model. The test set is used only to create a vector of predictions with the same size as the test set's rating vector with the corresponding movie ids
+y_hat <- test_set %>% 
+  left_join(m_i, by='movieId') %>%
+  left_join(u_i, by='userId') %>%
+  mutate(y_hat = mean(edx_small$rating) + m_i + u_i) %>% .$y_hat
+
+RMSE(test_set$rating, y_hat)
 ```
 
