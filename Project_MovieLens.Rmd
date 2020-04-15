@@ -1,0 +1,295 @@
+---
+title: "Movie recommendation system: Predicting movie ratings in the MovieLens data set"
+author: "Davi Alves Oliveira"
+date: "15/04/2020"
+output: pdf_document
+bibliography: references.bib
+---
+
+```{r eval=FALSE, include=FALSE}
+# Initial configurations
+
+# Include Create_test_and_validation_sets.R
+
+library(tidyverse)
+library(lubridate)
+library(magrittr)
+```
+
+
+#Introduction
+
+This report describes the development of an algorithm, implemented in the R language [@R-base], to predict ratings using a subset of the MovieLens data set. This subset is reffered here as the edx dataset and contains 9.000.055 ratings of 10677 movies by 69878 users, with six columns, namely 'rating', 'userId', 'movieId', 'timestamp', 'title' and 'genres'. In this analysis, 'rating' is the outcome and the other columns are used as predictors or to generate new columns that are used as predictors. A detailed description of each column and columns derived from these six original ones is given in the next section (Method). The code below extracts the basic information from the dataset.
+
+```{r}
+# It is assumed that the tidyverse library is already installed and loaded and that the subset of the MovieLens dataset is already loaded and available in the edx object.
+
+# Number of ratings
+n_ratings = nrow(edx)
+
+# Number of movies
+n_movies = edx %>%
+  group_by(movieId) %>%
+  sample_n(1) %>%
+  ungroup() %>%
+  summarize(n_movies = n())
+
+# Number of users
+n_users = edx %>%
+  group_by(userId) %>%
+  sample_n(1) %>%
+  ungroup() %>%
+  summarize(n_users = n())
+
+tibble(n_ratings, n_movies, n_users)
+```
+
+*Columns*
+
+```{r}
+names(edx)
+```
+
+The goal of the algorithm is to predict the ratings of different movies by different users, so that it can be used to recommend movies based on users ratings. To do this, the original data was preprocessed and analyzed following the instructions available in Irizarry [-@Irizarry, section 34.7]. Because of the size of the dataset, models based on the Naive Bayes approach, which is less computationally demanding, were initially construted and analyzed and later compared with a more computationally demanding K-nearest neighbors model (KNN). Finally, an esemble of the best Naive Bayes and the KNN models was analyzed. The packages used the analyses were tidyverse [@Tidyverse], lubridate [@Lubridate], magrittr [@Magrittr], caret [@Caret], and beepr [@Beepr, the package beepr was used during the development and testing of codes by the use of the ‘beepr::beep()’ function].
+
+This report is organized in three additional sections: the Method section describes the steps of data cleaning, data exploration and modeling, the Results and Discussions section describes the analysis of overall accuracy and RMSE of each step, and the Conclusion section brings a summary of the results with limitations and suggestions for future work.
+
+# Method
+
+The method consisted in one stage of data cleaning, one state of data exploration and one stage of modeling. Data cleaning consisted in the preprocessing of the data, including the transformation of variables and creation of new columns. Data exploration consisted in the visual inspection of the data and exclusion of columns considered unecessary based on visual inspection. Finally, modeling consisted in the creation of models of two categorias, naive bayes and k-nearest neighbor (KNN). Each stage is explained in the subsequent subsections, but first a detailed descripton of the columns is given.
+
+The columns ‘userId’ and ‘movieId’, as the names suggest, contains unique numerical identifications of each user and movie, respectivelly. These columns were used as found in the edx dataset. The column ‘title’, with the titles and year of release of the movies, was split in two columns, ‘title’ and ‘year’. The column timestamp, with the timestamp of the rating, was used in the creation of five additional columns that enabled better exploratory analysis. From the timestamps, the columns ‘rating_year’, ‘rating_month’, ‘rating_day’, ‘rating_wday’, ‘rating_hour’ were created, containing, respectively, the year of the rating, the month of the rating, the day of the month of the rating (1 to 31), the day of the week of the rating (1 to 7), and the hour of the rating (0 to 23). The idea is to explore whether the moment of the rating, with different degrees of specifities, is a good predictor of rating. Additionally, the column ‘years_since_release’ was created by subtracting the year of relase from the year of the rating, thus representing how long the movie was available for rating. Finally, the genres column was used to create columns of binary variables measuring whether or not the movie is of a certain genre. For example, the value of the column ‘is_Action’ is 1 if ‘Action’ in one of the genres in the ‘genres’ column and 0 otherwise.
+
+## Data cleaning
+
+The following code was used to create the additional columns from the timestamps.
+
+```{r}
+# Extract the year of the movie from the column 'title'. The pattern matches four numbers inside parenthesis and the capture group isolates only the numbers.
+edx = edx %>%
+  mutate(
+    year = str_match(title, '\\((\\d{4})\\)')[,2] %>% as.numeric(),
+    time = as_datetime(timestamp),
+    rating_year = year(time),
+    rating_month = month(time),
+    rating_day = day(time),
+    rating_wday = wday(time),
+    rating_hour = hour(time),
+    years_since_release = rating_year - year)
+```
+
+From the ‘genres’ column, first a list of all the genres was created and stored in the vector ‘genres’. Then, for each genre, a column was created with a binary variable representing whether a given movie is of a particular genre or not.
+
+```{r}
+# Split the genres into individual genres, using the separator '|'. Compact the vector so it keeps only unique values
+genres = edx %$%
+  genres %>% str_split('\\|') %>% unlist() %>% unique()
+genres
+```
+
+The vector ‘genres’ was used to create the is_[genre] columns (e. g. is_Action, is_Comedy, etc), using the code below.
+
+```{r}
+# Iterate through the values of the 'genres' vector. For each value, attach the 'is_' preffix and then create a column with this name, attributing the value 1 if the genre is present in the 'genres' column or 0 otherwise. The '!!variable :=' notation is used so that the value of the variable is attributed as the name of the column.
+for (g in genres) {
+  genre = str_glue('is_', g)
+  
+  edx = edx %>%
+    mutate(!!genre := ifelse(str_detect(.$genres, g), 1, 0))
+}
+```
+
+After creating the new columns, the code below was used to analyze the distribution of genres. As can be observed, the most frequent genres are Drama and Comedy. Seven movies have no genre listed and 8.181 movies are listed as ‘IMAX’, which is not a genre per se, but format, which might significantly affect rating.
+
+
+```{r}
+# Select the columns whose names starts with 'is_' (e. g. is_Action, is_Comedy) and show their sums, which are the number of movies in each genre
+edx %>%
+  select(starts_with('is_')) %>%
+  colSums() %>%
+  sort(decreasing = T)
+```
+
+```{r include=FALSE}
+# Remove values that would not be used in the next steps
+rm(g, genre, genres)
+```
+
+
+# Data exploration
+
+Data visualization was used to explore possible effects of the variables on rating. Special attention was given in this stage to the time-related variables, since it was not clear if the day of the week or the day of the month, for example, would have any effect on rating.
+
+First, a column with the number of ratings per movie was created (‘n_ratings’). The visual exploration consisted in ploting rating against each one of the time-related variables in a heatmap with color representing the number of ratings, so possible interactions between these variables could be analyzed. Then, heatmaps were generated for each variable of interest, as shown in sequence. The variables ‘userId’ and ‘movieId’ were not included in the exploratory analysis because the effects of these variables are already known.
+
+```{r}
+# Count the number of ratings of each movie and stores in the 'n_ratings' column
+edx = edx %>%
+  group_by(movieId) %>%
+  mutate(n_ratings = n()) %>%
+  ungroup()
+```
+
+##Years since release
+
+It is already known that older movies tend to be more rated because of the longer time. Movies with more ratings also tend to be better rated (see Irizarry 2019, sec. 33.8). To visualize if these trends are alo observed in the edx dataset, a heatmap was created with the code below. The right portion of the plot is darker than the left portion, which shows that older movies indeed are rated more frequently, as expected considering the first trend. However, if the trend of movies with more ratings being better rated is present in the dataset, it can not be observed with this plot, since there seems to be no clear pattern differing the top portion of the plot from the bottom portion.
+
+*Years since release*
+
+```{r}
+# Add the 'n_ratings' column with the number of ratings of each movie
+edx = edx %>% 
+  group_by(movieId) %>% 
+  mutate(n_ratings = n()) %>% 
+  ungroup()
+
+# Create a heatmap of rating versus years sinc release with fill representing number of ratings
+edx %>% 
+  ggplot(aes(years_since_release, rating, fill = n_ratings)) + 
+    geom_tile() +
+    ylab('Rating') +
+    xlab('Years since release (year of rating - year of release)')
+
+```
+
+## Month, day of the month, day of the week and hour of rating
+
+The next four plots were generated following the same approach as the previous one with the variables month of rating and, day of the month, day of the week and hour of rating. In summary: concerning months, some anomalies can be observed in abril (4) and august (8), but with no overall clear pattern; concerning day of the month, no overall pattern is observed; concerning day of week, it can be observed that there are more ratings on sundays and at the beginning of the week movies tend to be rated lower and; concerning hour of the day, no clear overall pattern can be observed.
+
+*Month of rating*
+
+```{r}
+# Plot rating against month of rating, with fill representing the number of ratings
+edx %>% 
+  ggplot(aes(rating_month, rating, fill = n_ratings)) + 
+    geom_tile() + 
+    scale_x_continuous(breaks = 1:12) +
+    ylab('Rating') +
+    xlab('Month')
+
+```
+
+*Day of the month*
+
+```{r}
+# Plot rating against day of the month, with fill representing the number of ratings
+edx %>% 
+  ggplot(aes(rating_day, rating, fill = n_ratings)) + 
+    geom_tile() + 
+    scale_x_continuous(breaks = 1:31) +
+    ylab('Rating') +
+    xlab('Day of the month')
+
+```
+
+*Day of the week*
+
+```{r}
+# Plot rating against day of the week, with fill representing the number of ratings
+edx %>% 
+  ggplot(aes(rating_wday, rating, fill = n_ratings)) + 
+    geom_tile() + 
+    scale_x_continuous(breaks = 1:7) +
+    ylab('Rating') +
+    xlab('Day of the week')
+
+```
+
+*Hour of rating*
+
+```{r}
+# Plot rating against hour, with fill representing the number of ratings
+edx %>% 
+  ggplot(aes(rating_hour, rating, fill = n_ratings)) + 
+    geom_tile() + 
+    scale_x_continuous(breaks = 0:23) +
+    ylab('Rating') +
+    xlab('Hour')
+```
+
+##Genres
+
+To check a possible effect of genre on rating, a boxplot of rating against genre was analyzed. Initially the idea was to analyze the whole dataset, but the machine used in analysis could not handle the task due to lack of enough memory, with the origial edx dataset the code below would return an error message. Thus, after trials with increasingly smaller partitions, the code could run with a partition with 25% of the dataset. It seems that genre has some effect on rating, with Film-Noir being better rated than Horror, for example.
+
+```{r}
+# Create subset of data set and used to generate a boxplot of rating against genre
+edx[createDataPartition(edx$rating, times = 1, p = 0.25, list = FALSE), ] %>% 
+  select(rating, starts_with('is_')) %>% 
+  pivot_longer(-rating, names_to = 'genre', values_to = 'is_genre') %>% 
+  filter(is_genre == 1) %>% 
+  ggplot(aes(reorder(genre, -rating, fun = median), rating)) + 
+    geom_boxplot() + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ylab('Rating') +
+  xlab('Genre')
+```
+
+Based on the results of the visualizations, the columns with month, days of the month and hour were removed. Therefore, the data set used in modeling was comprised of the columns listed below.
+
+```{r}
+# Select only the necessary columns and print their names
+edx = edx %>%
+  select(rating, 
+         movieId, 
+         userId, 
+         genres, 
+         years_since_release,
+         rating_wday,
+         starts_with('is_'))
+names(edx)
+```
+
+#Modeling
+
+Modeling was carried out by using a training set of 90% of the data and testing was done with the remaining 10% minus the movies that and users that were initially in the test set and not in the training set. The following code was used in data partition.
+
+```{r}
+# Set seed to 2020
+set.seed(2020)
+
+# Create a partition of 10% of the data and stores the indexes in the 'test_index' vector
+test_index = createDataPartition(edx$rating, times = 1, p = 0.1, list = FALSE) %>% as_vector()
+
+train_set = edx[-test_index,] 
+test_set = edx[test_index,]
+
+# Remove movies and users that do not appear in the training set from the test set
+test_set = test_set %>% 
+  semi_join(train_set, by = 'movieId') %>% 
+  semi_join(train_set, by = 'userId') 
+
+# Remove unecessary data from memory
+rm(edx, test_index)
+```
+
+The Root Mean Square Error (RMSE) was used to assess the models by means of the following function.
+
+```{r}
+RMSE = function(true_ratings, predicted_ratings){ 
+  sqrt(mean((true_ratings - predicted_ratings)^2))
+}
+
+```
+
+##First model
+
+A first model was created bo te used as a baseline for comparison. The first model consists in predicting the rating by the average of ratings. Thus, given a movie $i$ and a user $j$ we have $Y_{j,i}=\mu+\epsilon_{j,i}$, being $Y$ the set of predictions, $\mu$ the mean of ratings and $\epsilon$ the random errors. This model results in a RMSE of 1.060867.
+
+```{r}
+# Predictions of the first model
+y_hat = mean(train_set$rating)
+
+# RMSE of the first model
+RMSE(test_set$rating, y_hat)
+```
+
+## Second model
+
+The second model includes the effect of movies. As already known and describe in @Irizarry, movies are rated differently because of variability in their qualities. Thus, to the second model is added the movie effect ($m_i$) with $m_i$ being the average of the difference between de mean of ratings and the mean of the particular movie $i$, that is $Y_{j,i}=\mu+m_i+\epsilon_{j,i}$ with $m_i=\frac{1}{N_m}\sum_i^{N_m}Y_{j,i}-\hat{\mu}$. The inclusion of the movie effect reduced the RMSE to 0.9440327.
+
+```{r}
+# Second model: average rating + movie effect. The test set is used only to create a vector of predictions of the same size as the rating vector of the test set
+
+y_hat = mean(train_set$rating) + (test_set %>% left_join(train_set, by='movieId') %>% .$m_i)
+```
+
