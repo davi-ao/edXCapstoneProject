@@ -305,7 +305,7 @@ RMSE(test_set$rating, y_hat)
 
 ##Third model
 
-The third model adds the effect of users. As already known, different users rates movies differently. User effect is defined as the average rating of the users minus the mean of ratings and the movie effect. The third model is then defined as $Y_{j,i}=\mu+m_i+u_j+\epsilon_{j,i}$ with $u_i=\frac{1}{N_u}\sum_i^{N_u}Y_{j,i}-\hat{\mu}-m_i$.
+The third model adds the effect of users. As already known, different users rates movies differently. User effect is defined as the average rating of the users minus the mean of ratings and the movie effect. The third model is then defined as $Y_{j,i}=\mu+m_i+u_j+\epsilon_{j,i}$ with $u_i=\frac{1}{N_u}\sum_i^{N_u}Y_{j,i}-\hat{\mu}-m_i$. The inclusion of the user effect reduced the RMSE to 0.8657138.
 
 ```{r}
 # The user effect is defined as the average of ratings by each user minus the mean of ratings and the movie effect
@@ -314,12 +314,96 @@ u_i = train_set %>%
   group_by(userId) %>%
   summarize(u_i = mean(rating - mean(train_set$rating) - m_i))
 
+# Add u_i to the train set to be used in next steps
+train_set = train_set %>%
+  left_join(u_i, by = 'userId')
+
 # Predictions from the third model. The test set is used only to create a vector of predictions with the same size as the test set's rating vector with the corresponding movie ids
-y_hat <- test_set %>% 
+y_hat = test_set %>% 
   left_join(m_i, by='movieId') %>%
   left_join(u_i, by='userId') %>%
-  mutate(y_hat = mean(edx_small$rating) + m_i + u_i) %>% .$y_hat
+  mutate(y_hat = mean(train_set$rating) + m_i + u_i) %>% .$y_hat
 
 RMSE(test_set$rating, y_hat)
+```
+
+##Fourth model
+
+The fourth model consisted on the inclusion of genre effect. Initially, the idea was to use the binary variables to do so, which entailed initially calculating the average rating of each genre. However, the code to do so, shown below (Code 1), required more memory than the machine used for analysis could handle, returning an alocation error. Thus, the original column genres was used (Code 2), so the effect considered was the effect of the groups of genre. The fourth model is defined as $Y_{j,i}=\mu+m_i+u_j+g_i+\epsilon_{j,i}$. The inclusion of genres effect reduced the RMSE to 0.8654029.
+
+*Code 1*
+
+```{r eval=FALSE, include=TRUE}
+# Code created to calculate the effect of each genre. This code returns "cannot allocate vector of size ..." error.
+g_i = train_set %>%
+  select(rating, m_i, u_i, starts_with('is_')) %>%
+  pivot_longer(-c(rating, m_i, u_i), names_to = 'genre', values_to = 'is_genre') %>%
+  filter(is_genre == 1) %>%
+  group_by(genre) %>%
+  summarize(g_i = mean(rating - mean(train_set$rating) - m_i - u_i))
+  
+```
+
+*Code 2*
+
+```{r}
+g_i = train_set %>%
+  group_by(genres) %>%
+  summarize(g_i = mean(rating - mean(train_set$rating) - m_i - u_i))
+
+# Fourth model: average rating + movie effect + user effect + genres effect
+y_hat <- test_set %>% 
+  left_join(m_i, by = 'movieId') %>%
+  left_join(u_i, by = 'userId') %>%
+  left_join(g_i, by = 'genres') %>%
+  mutate(y_hat = mean(test_set$rating) + m_i + u_i + g_i) %>% .$y_hat
+
+RMSE(test_set$rating, y_hat)
+```
+
+##Fifth model
+
+An important characteristic missing in the previous models is regularization. The fifth model is the same as the previous one, but with the effects being regularized. So, each effect was calculated by dividing the sums by $N+\lambda$. With regularization, the RMSE decreased to 0.8314205.
+
+```{r}
+lambda_RMSE = sapply(1:5, function(l) {
+  lambda = l
+
+  m_i = train_set %>%
+    select(rating, movieId) %>%
+    group_by(movieId) %>%
+    summarize(m_i = sum(rating - mean(train_set$rating))/(n() + lambda))
+  
+  train_set = train_set %>%
+    select(-m_i) %>%
+    left_join(m_i, by = 'movieId')
+  
+  u_i = train_set %>%
+    select(rating, userId, m_i) %>%
+    group_by(userId) %>%
+    summarize(u_i = sum(rating - mean(train_set$rating) - m_i)/(n() + lambda))
+  
+  train_set = train_set %>%
+    select(-u_i) %>%
+    left_join(u_i, by = 'userId')
+  
+  g_i = train_set %>%
+    select(rating, genres, m_i, u_i) %>%
+    group_by(genres) %>%
+    summarize(g_i = sum(rating - mean(train_set$rating) - m_i - u_i)/(n() + lambda))
+  
+  train_set = train_set %>%
+    left_join(g_i, by = 'genres')
+  
+  y_hat <- test_set %>% 
+    left_join(m_i, by = 'movieId') %>%
+    left_join(u_i, by = 'userId') %>%
+    left_join(g_i, by = 'genres') %>%
+    mutate(y_hat = mean(train_set$rating) + m_i + u_i + g_i) %>% .$y_hat
+  
+  tibble(lambda = lambda,RMSE = RMSE(test_set$rating, y_hat))
+})
+beepr::beep(3)
+
 ```
 
