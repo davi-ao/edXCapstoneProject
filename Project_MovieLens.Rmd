@@ -5,25 +5,78 @@ date: "15/04/2020"
 output: pdf_document
 bibliography: references.bib
 ---
-
-```{r eval=FALSE, include=FALSE}
-# Initial configurations
-
-# Include Create_test_and_validation_sets.R
-
-library(tidyverse)
-library(lubridate)
-library(magrittr)
-```
-
-
 #Introduction
 
-This report describes the development of an algorithm, implemented in the R language [@R-base], to predict ratings using a subset of the MovieLens data set. This subset is reffered here as the edx dataset and contains 9.000.055 ratings of 10677 movies by 69878 users, with six columns, namely 'rating', 'userId', 'movieId', 'timestamp', 'title' and 'genres'. In this analysis, 'rating' is the outcome and the other columns are used as predictors or to generate new columns that are used as predictors. A detailed description of each column and columns derived from these six original ones is given in the next section (Method). The code below extracts the basic information from the dataset.
+This report describes the development of an algorithm, implemented in the R language [@R-base], to predict ratings using a subset of the MovieLens data set. This subset is referred here as the edx data set and contains 9.000.055 ratings of 10677 movies by 69878 users, with six columns, namely 'rating', 'userId', 'movieId', 'timestamp', 'title' and 'genres'. In this analysis, 'rating' is the outcome and the other columns are used either as predictors or to generate new columns that are used as predictors. A detailed description of each column and columns derived from these six original ones is given in the next section (Method).
+
+The code below, provided was part of the course material in the edx platform, was used to create the edx data set.
 
 ```{r}
-# It is assumed that the tidyverse library is already installed and loaded and that the subset of the MovieLens dataset is already loaded and available in the edx object.
+################################
+# Create edx set, validation set
+################################
 
+# Note: this process could take a couple of minutes
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                 col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+# Validation set will be 10% of MovieLens data
+set.seed(1) # set.seed(1, sample.kind="Rounding")
+# if using R 3.5 or earlier, use `set.seed(1)`. Otherwise, use 
+# `set.seed(1, sample.kind="Rounding")`
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+validation <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+# Remove unecessary data from memory
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+```
+
+The code below, in turn, sets the initial configurations, installing and/or loading the necessary additional packages and setting the theme of the plots.
+
+```{r}
+# Install and/or load the necessary packages
+if (!require(lubridate)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if (!require(magrittr)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if (!require(ggrepel)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if (!require(ggthemes)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+
+# Set the theme for the plots
+theme_set(theme() + theme_hc())
+```
+
+The code below extracts the basic information from the data set.
+
+```{r}
 # Number of ratings
 n_ratings = nrow(edx)
 
@@ -41,31 +94,40 @@ n_users = edx %>%
   ungroup() %>%
   summarize(n_users = n())
 
+# Creates a tibble with the values for better visualization
 tibble(n_ratings, n_movies, n_users)
 ```
 
 *Columns*
 
 ```{r}
+# Print the data frame columns' names
 names(edx)
 ```
 
-The goal of the algorithm is to predict the ratings of different movies by different users, so that it can be used to recommend movies based on users ratings. To do this, the original data was preprocessed and analyzed following the instructions available in Irizarry [-@Irizarry, section 34.7]. Because of the size of the dataset, models based on the Naive Bayes approach, which is less computationally demanding, were initially construted and analyzed and later compared with a more computationally demanding K-nearest neighbors model (KNN). Finally, an esemble of the best Naive Bayes and the KNN models was analyzed. The packages used the analyses were tidyverse [@Tidyverse], lubridate [@Lubridate], magrittr [@Magrittr], caret [@Caret], and beepr [@Beepr, the package beepr was used during the development and testing of codes by the use of the ‘beepr::beep()’ function].
+The goal of the algorithm is to predict the ratings of different movies by different users with a desired Root Mean Square Error (RMSE) smaller than 0.86490. To do this, the original data was pre-processed and analyzed following the instructions available in Irizarry [-@Irizarry, section 34.7]. The initial idea was to compare the results of this first type of models with results from other algorithms, such as KNN (K-Nearest Neighbors), but because of the size of the data set, the use of the train function of the caret package [@Caret] with algorithms such KNN resulted in memory allocation errors. Thus, only the approach described in Irizarry was followed. The packages used in this work were the tidyverse [@Tidyverse], lubridate [@Lubridate], magrittr [@Magrittr], caret [@Caret], ggthemes [@Ggthemes], ggrepel [@Ggrepel] and beepr [@Beepr, the package beepr was used during the development and testing of codes by the use of the ‘beepr::beep()’ function].
 
-This report is organized in three additional sections: the Method section describes the steps of data cleaning, data exploration and modeling, the Results and Discussions section describes the analysis of overall accuracy and RMSE of each step, and the Conclusion section brings a summary of the results with limitations and suggestions for future work.
+This report is organized in three additional sections: the Method section describes the steps of data cleaning, data exploration and modeling, the Results section describes the analysis of the final model and its validation, and the Conclusion section brings a summary of the results with limitations and suggestions for future work.
+
+```{r}
+# Remove unecessary data from memory
+rm(n_movies, n_users, n_ratings)
+```
 
 # Method
 
-The method consisted in one stage of data cleaning, one state of data exploration and one stage of modeling. Data cleaning consisted in the preprocessing of the data, including the transformation of variables and creation of new columns. Data exploration consisted in the visual inspection of the data and exclusion of columns considered unecessary based on visual inspection. Finally, modeling consisted in the creation of models of two categorias, naive bayes and k-nearest neighbor (KNN). Each stage is explained in the subsequent subsections, but first a detailed descripton of the columns is given.
+The method consisted in one stage of data cleaning, one stage of data exploration and one stage of modeling. Data cleaning consisted in the pre-processing of the data, including the creation of new columns. Data exploration consisted in the visual inspection of the data and exclusion of columns considered unnecessary based this inspection. Finally, modeling consisted in the creation of linear models. Each stage is explained in the subsequent sections, but first a detailed description of the columns is given.
 
-The columns ‘userId’ and ‘movieId’, as the names suggest, contains unique numerical identifications of each user and movie, respectivelly. These columns were used as found in the edx dataset. The column ‘title’, with the titles and year of release of the movies, was split in two columns, ‘title’ and ‘year’. The column timestamp, with the timestamp of the rating, was used in the creation of five additional columns that enabled better exploratory analysis. From the timestamps, the columns ‘rating_year’, ‘rating_month’, ‘rating_day’, ‘rating_wday’, ‘rating_hour’ were created, containing, respectively, the year of the rating, the month of the rating, the day of the month of the rating (1 to 31), the day of the week of the rating (1 to 7), and the hour of the rating (0 to 23). The idea is to explore whether the moment of the rating, with different degrees of specifities, is a good predictor of rating. Additionally, the column ‘years_since_release’ was created by subtracting the year of relase from the year of the rating, thus representing how long the movie was available for rating. Finally, the genres column was used to create columns of binary variables measuring whether or not the movie is of a certain genre. For example, the value of the column ‘is_Action’ is 1 if ‘Action’ in one of the genres in the ‘genres’ column and 0 otherwise.
+The columns ‘userId’ and ‘movieId’, as the names suggest, contains unique numerical identifications of each user and movie, respectively. These columns were used as originally found in the edx data set. The column ‘title’, with the titles and year of release of the movies, was split in two columns, ‘title’ and ‘year’. The column 'timestamp', with the timestamp of the rating, was used in the creation of five additional columns that enabled better exploratory analysis. From the timestamps, the columns ‘rating_year’, ‘rating_month’, ‘rating_day’, ‘rating_wday’ and ‘rating_hour’ were created, containing, respectively, the year of the rating, the month of the rating, the day of the month of the rating (1 to 31), the day of the week of the rating (1 to 7), and the hour of the rating (0 to 23). The idea was to explore whether the moment of the rating, with different degrees of specificities, should be used as predictor of rating. Additionally, the column ‘years_since_release’ was created by subtracting the year of release from the year of the rating, thus representing how long the movie was available for rating. Finally, the genres column was used to create columns of binary variables measuring whether or not the movie is of a certain genre. For example, the value of the column ‘is_Action’ is 1 if ‘Action’ in one of the genres in the ‘genres’ column and 0 otherwise. These columns were originally meant to be used as predictors, but due to memory allocation errors, described later, the columns were only used to compute the number of genres and then discarded.
 
 ## Data cleaning
 
 The following code was used to create the additional columns from the timestamps.
 
 ```{r}
-# Extract the year of the movie from the column 'title'. The pattern matches four numbers inside parenthesis and the capture group isolates only the numbers.
+# Extract the year of the movie from the column 'title'. The pattern matches
+# four numbers inside parenthesis and the capture group isolates only the
+# numbers
 edx = edx %>%
   mutate(
     year = str_match(title, '\\((\\d{4})\\)')[,2] %>% as.numeric(),
@@ -80,8 +142,11 @@ edx = edx %>%
 
 From the ‘genres’ column, first a list of all the genres was created and stored in the vector ‘genres’. Then, for each genre, a column was created with a binary variable representing whether a given movie is of a particular genre or not.
 
+*List of genres used in the edx data set*
+
 ```{r}
-# Split the genres into individual genres, using the separator '|'. Compact the vector so it keeps only unique values
+# Split the genres into individual genres, using the separator '|'.
+# Compact the vector so it keeps only unique values
 genres = edx %$%
   genres %>% str_split('\\|') %>% unlist() %>% unique()
 genres
@@ -90,7 +155,13 @@ genres
 The vector ‘genres’ was used to create the is_[genre] columns (e. g. is_Action, is_Comedy, etc), using the code below.
 
 ```{r}
-# Iterate through the values of the 'genres' vector. For each value, attach the 'is_' preffix and then create a column with this name, attributing the value 1 if the genre is present in the 'genres' column or 0 otherwise. The '!!variable :=' notation is used so that the value of the variable is attributed as the name of the column.
+# Iterate through the values of the 'genres' vector. 
+# For each value, attach the 'is_' preffix and then create a column with this 
+# name, attributing the value 1 if the genre is present in the 'genres' column 
+# or 0 otherwise. 
+# The '!!variable :=' notation is used so that the value of the variable is
+# attributed as the name of the column. See 
+# https://dplyr.tidyverse.org/articles/programming.html
 for (g in genres) {
   genre = str_glue('is_', g)
   
@@ -101,9 +172,9 @@ for (g in genres) {
 
 After creating the new columns, the code below was used to analyze the distribution of genres. As can be observed, the most frequent genres are Drama and Comedy. Seven movies have no genre listed and 8.181 movies are listed as ‘IMAX’, which is not a genre per se, but format, which might significantly affect rating.
 
-
 ```{r}
-# Select the columns whose names starts with 'is_' (e. g. is_Action, is_Comedy) and show their sums, which are the number of movies in each genre
+# Select the columns whose names starts with 'is_' (e. g. is_Action, is_Comedy)
+# and show their sums, which are the number of movies in each genre
 edx %>%
   select(starts_with('is_')) %>%
   colSums() %>%
@@ -111,19 +182,19 @@ edx %>%
 ```
 
 ```{r include=FALSE}
-# Remove values that would not be used in the next steps
+# Remove unecessary data from memory
 rm(g, genre, genres)
 ```
-
 
 # Data exploration
 
 Data visualization was used to explore possible effects of the variables on rating. Special attention was given in this stage to the time-related variables, since it was not clear if the day of the week or the day of the month, for example, would have any effect on rating.
 
-First, a column with the number of ratings per movie was created (‘n_ratings’). The visual exploration consisted in ploting rating against each one of the time-related variables in a heatmap with color representing the number of ratings, so possible interactions between these variables could be analyzed. Then, heatmaps were generated for each variable of interest, as shown in sequence. The variables ‘userId’ and ‘movieId’ were not included in the exploratory analysis because the effects of these variables are already known.
+First, a column with the number of ratings per movie was created (‘n_ratings’). The visual exploration consisted in plotting rating against each one of the time-related variables in a heat map with color representing the number of ratings, so possible interactions between these variables could be analyzed. Then, heat maps were generated for each variable of interest, as shown in sequence. The variables ‘userId’ and ‘movieId’ were not included in the exploratory analysis because the effects of these variables are already known.
 
 ```{r}
-# Count the number of ratings of each movie and stores in the 'n_ratings' column
+# Count the number of ratings of each movie and store it in the 'n_ratings'
+# column
 edx = edx %>%
   group_by(movieId) %>%
   mutate(n_ratings = n()) %>%
@@ -132,67 +203,62 @@ edx = edx %>%
 
 ##Years since release
 
-It is already known that older movies tend to be more rated because of the longer time. Movies with more ratings also tend to be better rated (see Irizarry 2019, sec. 33.8). To visualize if these trends are alo observed in the edx dataset, a heatmap was created with the code below. The right portion of the plot is darker than the left portion, which shows that older movies indeed are rated more frequently, as expected considering the first trend. However, if the trend of movies with more ratings being better rated is present in the dataset, it can not be observed with this plot, since there seems to be no clear pattern differing the top portion of the plot from the bottom portion.
+It is already known that older movies tend to be more rated because of the longer time they are available for rating. Movies with more ratings also tend to be better rated (see Irizarry 2019, sec. 33.8). To visualize if these trends are also observed in the edx data set, a heat map was created with the code below. The right portion of the plot is darker than the left portion, which shows that older movies indeed are rated more frequently, as expected considering the first trend. However, if the trend of movies with more ratings being better rated is present in the data set, it can not be observed with this plot, since there seems to be no clear pattern differing the top portion of the plot from the bottom portion.
 
 *Years since release*
 
 ```{r}
-# Add the 'n_ratings' column with the number of ratings of each movie
-edx = edx %>% 
-  group_by(movieId) %>% 
-  mutate(n_ratings = n()) %>% 
-  ungroup()
-
-# Create a heatmap of rating versus years sinc release with fill representing number of ratings
+# Create a heatmap of rating versus years sinc release with fill representing
+# number of ratings
+# Note: plotting may take several minutes
 edx %>% 
   ggplot(aes(years_since_release, rating, fill = n_ratings)) + 
     geom_tile() +
     ylab('Rating') +
     xlab('Years since release (year of rating - year of release)')
-
 ```
 
 ## Month, day of the month, day of the week and hour of rating
 
-The next four plots were generated following the same approach as the previous one with the variables month of rating and, day of the month, day of the week and hour of rating. In summary: concerning months, some anomalies can be observed in abril (4) and august (8), but with no overall clear pattern; concerning day of the month, no overall pattern is observed; concerning day of week, it can be observed that there are more ratings on sundays and at the beginning of the week movies tend to be rated lower and; concerning hour of the day, no clear overall pattern can be observed.
+The next four plots were generated following the same approach as the previous one with the variables month of rating, day of the month, day of the week and hour of rating. In summary: concerning months, some anomalies can be observed in April (4) and August (8), but with no overall clear linear pattern; concerning day of the month, no overall linear pattern is observed; concerning day of week, it can be observed that there are more ratings on Sundays and at the beginning of the week movies tend to be rated lower and; concerning hour of the day, no clear overall linear pattern can be observed.
 
 *Month of rating*
 
 ```{r}
-# Plot rating against month of rating, with fill representing the number of ratings
+# Plot rating against month of rating, with fill representing the number of
+# ratings
 edx %>% 
   ggplot(aes(rating_month, rating, fill = n_ratings)) + 
     geom_tile() + 
     scale_x_continuous(breaks = 1:12) +
     ylab('Rating') +
     xlab('Month')
-
 ```
 
 *Day of the month*
 
 ```{r}
-# Plot rating against day of the month, with fill representing the number of ratings
+# Plot rating against day of the month, with fill representing the number of
+# ratings
 edx %>% 
   ggplot(aes(rating_day, rating, fill = n_ratings)) + 
     geom_tile() + 
     scale_x_continuous(breaks = 1:31) +
     ylab('Rating') +
     xlab('Day of the month')
-
 ```
 
 *Day of the week*
 
 ```{r}
-# Plot rating against day of the week, with fill representing the number of ratings
+# Plot rating against day of the week, with fill representing the number of
+# ratings
 edx %>% 
   ggplot(aes(rating_wday, rating, fill = n_ratings)) + 
     geom_tile() + 
     scale_x_continuous(breaks = 1:7) +
     ylab('Rating') +
     xlab('Day of the week')
-
 ```
 
 *Hour of rating*
@@ -209,22 +275,26 @@ edx %>%
 
 ##Genres
 
-To check a possible effect of genre on rating, a boxplot of rating against genre was analyzed. Initially the idea was to analyze the whole dataset, but the machine used in analysis could not handle the task due to lack of enough memory, with the origial edx dataset the code below would return an error message. Thus, after trials with increasingly smaller partitions, the code could run with a partition with 25% of the dataset. It seems that genre has some effect on rating, with Film-Noir being better rated than Horror, for example.
+To check a possible effect of genre on rating, a box plot of rating against genre was analyzed. Initially the idea was to analyze the whole data set, but the machine used in the analysis could not handle the task due to lack of memory. With the original edx data set, the code below returns an error message. Thus, after trials with increasingly smaller partitions, the code could run with 15% of the data set. It seems that genre has some effect on rating, with Film-Noir being better rated than Horror, for example.
 
 ```{r}
-# Create subset of data set and used to generate a boxplot of rating against genre
-edx[createDataPartition(edx$rating, times = 1, p = 0.25, list = FALSE), ] %>% 
+# Set the seed
+set.seed(2020)
+
+# Create subset of data and used it to generate a box plot of rating against
+# genre
+edx[createDataPartition(y = edx$rating, times = 1, p = 0.15, list = FALSE) %>% as_vector(), ] %>% 
   select(rating, starts_with('is_')) %>% 
   pivot_longer(-rating, names_to = 'genre', values_to = 'is_genre') %>% 
   filter(is_genre == 1) %>% 
   ggplot(aes(reorder(genre, -rating, fun = median), rating)) + 
-    geom_boxplot() + 
+    geom_boxplot(fill = 4) + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ylab('Rating') +
   xlab('Genre')
 ```
 
-Based on the results of the visualizations, the columns with month, days of the month and hour were removed. Therefore, the data set used in modeling was comprised of the columns listed below.
+Based on the results of the visualizations, the columns with month, days of the month and hour were removed. As previously mentioned, models using the binary genre columns could not be used due to memory allocation problems and, thus, were also removed. Therefore, the data set used in modeling was comprised of the columns listed below. To make code simpler, 'years_since_release' was renamed to 'years' and 'rating_wday' was renamed to 'day'
 
 ```{r}
 # Select only the necessary columns and print their names
@@ -234,107 +304,131 @@ edx = edx %>%
          userId, 
          genres, 
          years_since_release,
-         rating_wday,
-         starts_with('is_'))
+         rating_wday) %>%
+  rename(years = years_since_release,
+         day = rating_wday)
 names(edx)
 ```
 
 #Modeling
 
-Modeling was carried out by using a training set of 90% of the data and testing was done with the remaining 10% minus the movies that and users that were initially in the test set and not in the training set. The following code was used in data partition.
+Modeling was carried out by using the holdout method of cross validation [@Schneider] with a training set of 90% of the data and testing with the remaining 10% minus the movies and users that were initially in the test set and not in the training set. The following code was used in data partition.
 
 ```{r}
 # Set seed to 2020
 set.seed(2020)
 
-# Create a partition of 10% of the data and stores the indexes in the 'test_index' vector
-test_index = createDataPartition(edx$rating, times = 1, p = 0.1, list = FALSE) %>% as_vector()
+# Create a partition of 10% of the data and stores the indexes in the
+# 'test_index' vector
+test_index = createDataPartition(
+  y = edx$rating, times = 1, p = 0.1, list = FALSE) %>% .[,1]
 
+# Save 90% of the data in the train_set data frame and the remaining in the 
+# test_set data frame
 train_set = edx[-test_index,] 
 test_set = edx[test_index,]
 
-# Remove movies and users that do not appear in the training set from the test set
+# Remove movies and users that do not appear in the training set from the test
+# set
 test_set = test_set %>% 
   semi_join(train_set, by = 'movieId') %>% 
   semi_join(train_set, by = 'userId') 
 
 # Remove unecessary data from memory
-rm(edx, test_index)
+rm(test_index)
 ```
 
 The Root Mean Square Error (RMSE) was used to assess the models by means of the following function.
 
 ```{r}
+# Definition of the Root Mean Square Error functionn
 RMSE = function(true_ratings, predicted_ratings){ 
   sqrt(mean((true_ratings - predicted_ratings)^2))
 }
-
 ```
+
+Several trials were carried out to model the data with the train function of the caret package, but all resulted in memory allocation errors. The code was running in a Windows 10 machine with 8GB of RAM. The function memory.limit() turned the operational system unresponsive. To test if the issue was OS-related, the same trials were repeated on a Linux machine (Ubuntu), also with 8GB of RAM. Since the errors persisted and no solutions could be found, only the models described in sequence could be properly constructed and analyzed.
 
 ##First model
 
-A first model was created bo te used as a baseline for comparison. The first model consists in predicting the rating by the average of ratings. Thus, given a movie $i$ and a user $j$ we have $Y_{j,i}=\mu+\epsilon_{j,i}$, being $Y$ the set of predictions, $\mu$ the mean of ratings and $\epsilon$ the random errors. This model results in a RMSE of 1.060867.
+A first model was created to be used as a baseline for comparison. The first model consists in predicting the rating by the average of ratings. Thus, given a movie $i$ and a user $j$ we have $Y=\mu+\epsilon$, being $Y$ the set of predictions, $\mu$ the mean of ratings and $\epsilon$ the random errors. This model results in a RMSE of 1.060867.
 
 ```{r}
 # Predictions from the first model
-y_hat = mean(train_set$rating)
+y_hat1 = mean(train_set$rating)
 
 # RMSE of the first model
-RMSE(test_set$rating, y_hat)
+RMSE(test_set$rating, y_hat1)
 ```
 
 ##Second model
 
-The second model includes the effect of movies. As already known and describe in @Irizarry, movies are rated differently because of variability in their qualities. Thus, to the second model is added the movie effect ($m_i$) with $m_i$ being the average of the difference between de mean of ratings and the mean of the particular movie $i$, that is $Y_{j,i}=\mu+m_i+\epsilon_{j,i}$ with $m_i=\frac{1}{N_m}\sum_i^{N_m}Y_{j,i}-\hat{\mu}$. The inclusion of the movie effect reduced the RMSE to 0.9440327.
+The second model includes the effect of movies. As already known and describe in @Irizarry, movies are rated differently because of variability in their qualities. Thus, to the second model is added the movie effect ($m_i$) with $m_i$ being the average of the difference between the mean of ratings and the mean of the particular movie $i$, that is $Y=\mu+m_i+\epsilon$ with $m_i=\frac{1}{N_m}\sum_i^{N_m}Y_{j,i}-\hat{\mu}$. The inclusion of the movie effect reduced the RMSE to 0.9440327.
 
 ```{r}
-# Create the m_i vector
+# Create the m_i vector with the movie effects
 m_i = train_set %>% 
   group_by(movieId) %>% 
-  summarise(m_i = mean(rating - mean(train_set$rating)))
+  summarize(m_i = mean(rating - mean(train_set$rating)))
 
-# Add m_i to the train set to be used in next steps
+# Add m_i to the train set to be used in the next steps
 train_set = train_set %>%
   left_join(m_i, by = 'movieId')
 
-# Predictions from the second model. The test set is used only to create a vector of predictions with the same size as the test set's rating vector with the corresponding movie ids
-y_hat = mean(train_set$rating) + (test_set %>% left_join(m_i, by='movieId') %>% .$m_i)
+# Add m_i to the test set to be used in the next steps
+# Note: The test set is used only to create a vector of predictions with the 
+# same size as the test set's rating vector, with the corresponding movie ids.
+# The ratings of the test set are not used
+test_set = test_set %>%
+  left_join(m_i, by = 'movieId')
 
-RMSE(test_set$rating, y_hat)
+# Remove unecessary data from memory
+rm(m_i)
+
+# Predictions from the second model.
+y_hat2 = mean(train_set$rating) + test_set$m_i
+
+RMSE(test_set$rating, y_hat2)
 ```
 
 ##Third model
 
-The third model adds the effect of users. As already known, different users rates movies differently. User effect is defined as the average rating of the users minus the mean of ratings and the movie effect. The third model is then defined as $Y_{j,i}=\mu+m_i+u_j+\epsilon_{j,i}$ with $u_i=\frac{1}{N_u}\sum_i^{N_u}Y_{j,i}-\hat{\mu}-m_i$. The inclusion of the user effect reduced the RMSE to 0.8657138.
+The third model adds the effect of users. As already known, different users rate movies differently. User effect is defined as the average rating of the users minus the mean of ratings and the movie effect. The third model is then defined as $Y=\mu+m_i+u_j+\epsilon$ with $u_j=\frac{1}{N_u}\sum_i^{N_u}Y_{i,j}-\hat{\mu}-m_i$. The inclusion of the user effect reduced the RMSE to 0.8657138.
 
 ```{r}
-# The user effect is defined as the average of ratings by each user minus the mean of ratings and the movie effect
-
-u_i = train_set %>%
+# The user effect is defined as the average of ratings by each user minus the
+# mean of ratings and the movie effect
+u_j = train_set %>%
   group_by(userId) %>%
-  summarize(u_i = mean(rating - mean(train_set$rating) - m_i))
+  summarize(u_j = mean(rating - mean(train_set$rating) - m_i))
 
-# Add u_i to the train set to be used in next steps
+# Add u_j to the train set to be used in the next steps
 train_set = train_set %>%
-  left_join(u_i, by = 'userId')
+  left_join(u_j, by = 'userId')
 
-# Predictions from the third model. The test set is used only to create a vector of predictions with the same size as the test set's rating vector with the corresponding movie ids
-y_hat = test_set %>% 
-  left_join(m_i, by='movieId') %>%
-  left_join(u_i, by='userId') %>%
-  mutate(y_hat = mean(train_set$rating) + m_i + u_i) %>% .$y_hat
+# Add u_j to the test set to be used in the next steps
+test_set = test_set %>%
+  left_join(u_j, by = 'userId')
 
-RMSE(test_set$rating, y_hat)
+# Remove unecessary data from memory
+rm(u_j)
+
+# Predictions from the third model.
+y_hat3 = test_set %>% 
+  mutate(y_hat = mean(train_set$rating) + m_i + u_j) %>% .$y_hat
+
+RMSE(test_set$rating, y_hat3)
 ```
 
 ##Fourth model
 
-The fourth model consisted on the inclusion of genre effect. Initially, the idea was to use the binary variables to do so, which entailed initially calculating the average rating of each genre. However, the code to do so, shown below (Code 1), required more memory than the machine used for analysis could handle, returning an alocation error. Thus, the original column genres was used (Code 2), so the effect considered was the effect of the groups of genre. The fourth model is defined as $Y_{j,i}=\mu+m_i+u_j+g_i+\epsilon_{j,i}$. The inclusion of genres effect reduced the RMSE to 0.8654029.
+The fourth model added genre effects. Initially, the idea was to use the binary variables to do so, which entailed calculating the average rating of each individual genre. However, the code to do so, shown below (Code 1), required more memory than the machine used for analysis could handle, returning a memory allocation error. Thus, the original column genres was used (Code 2), so the effect considered was the effect of the groups of genres. The fourth model is defined as $Y=\mu+m_i+u_j+g_k+\epsilon$ with an effect $g$ for each group of genre, $k$. The inclusion of genres effect reduced the RMSE to 0.8654029.
 
 *Code 1*
 
 ```{r eval=FALSE, include=TRUE}
-# Code created to calculate the effect of each genre. This code returns "cannot allocate vector of size ..." error.
+# Code created to calculate the effect of each genre. This code returns "cannot
+# allocate vector of size ..." error.
 g_i = train_set %>%
   select(rating, m_i, u_i, starts_with('is_')) %>%
   pivot_longer(-c(rating, m_i, u_i), names_to = 'genre', values_to = 'is_genre') %>%
@@ -347,63 +441,222 @@ g_i = train_set %>%
 *Code 2*
 
 ```{r}
-g_i = train_set %>%
+g_k = train_set %>%
   group_by(genres) %>%
-  summarize(g_i = mean(rating - mean(train_set$rating) - m_i - u_i))
+  summarize(g_k = mean(rating - mean(train_set$rating) - m_i - u_j))
+
+# Add g_k to the train set to be used in the next steps
+train_set = train_set %>%
+  left_join(g_k, by = 'genres')
+
+# Add u_j to the test set to be used in the next steps
+test_set = test_set %>%
+  left_join(g_k, by = 'genres')
+
+# Remove unecessary data from memory
+rm(g_k)
 
 # Fourth model: average rating + movie effect + user effect + genres effect
-y_hat <- test_set %>% 
-  left_join(m_i, by = 'movieId') %>%
-  left_join(u_i, by = 'userId') %>%
-  left_join(g_i, by = 'genres') %>%
-  mutate(y_hat = mean(test_set$rating) + m_i + u_i + g_i) %>% .$y_hat
+y_hat4 = test_set %>% 
+  mutate(y_hat = mean(test_set$rating) + m_i + u_j + g_k) %>% .$y_hat
 
-RMSE(test_set$rating, y_hat)
+RMSE(test_set$rating, y_hat4)
 ```
 
 ##Fifth model
 
-An important characteristic missing in the previous models is regularization. The fifth model is the same as the previous one, but with the effects being regularized. So, each effect was calculated by dividing the sums by $N+\lambda$. With regularization, the RMSE decreased to 0.8314205.
+An important characteristic missing in the previous models is regularization. Because the number of ratings varies according to the time the movie is available for release, and because a smaller number ratings results in less precise scorings, ratings need to be regularized according to how many ratings they receive. The column 'years' (formerly years_since_release) would be used for this purpose, but using the actual number of ratings is more appropriate, since it accounts for variability of number of ratings independently of its year of release - not all old movies are famous ones, and there is still variability even account for the year of release.  The fifth model is the same as the previous one, but with the effects being regularized. So, each effect was calculated by dividing the sums by $N+\lambda$. The best value of $\lambda$ was selected based on the value that resulted in the smallest RMSE in interval of 1 to 10. This value was $\lambda=5$, as show in the following plot. With regularization, the RMSE was reduced to 0.8648656 [< 0.86490].
 
 ```{r}
-lambda_RMSE = sapply(1:5, function(l) {
+# Iterate from 1 to 10 do select the best lambda value
+# For each value of lambda, calculate the regularized predictors, the resulting
+# RMSE and stores in the tibble 'lambda_RMSE'
+# Note: in the machine used in this analysis, this action took more than three 
+# hours
+lambda_RMSE = sapply(1:10, function(l) {
+  # Set lambda to current value of l
   lambda = l
 
+  # Calculate regularized movie effect
   m_i = train_set %>%
-    select(rating, movieId) %>%
     group_by(movieId) %>%
     summarize(m_i = sum(rating - mean(train_set$rating))/(n() + lambda))
   
+  # Update training set with movie effect
   train_set = train_set %>%
     select(-m_i) %>%
     left_join(m_i, by = 'movieId')
   
-  u_i = train_set %>%
-    select(rating, userId, m_i) %>%
+  # Update test set with movie effect
+  test_set = test_set %>%
+    select(-m_i) %>%
+    left_join(m_i, by = 'movieId')
+  
+  # Remove unecessary data from memory
+  rm(m_i)
+  
+  # Calculate regularized user effect
+  u_j = train_set %>%
     group_by(userId) %>%
-    summarize(u_i = sum(rating - mean(train_set$rating) - m_i)/(n() + lambda))
+    summarize(u_j = sum(rating - mean(train_set$rating) - m_i)/(n() + lambda))
   
+  # Update training set with user effect
   train_set = train_set %>%
-    select(-u_i) %>%
-    left_join(u_i, by = 'userId')
+    select(-u_j) %>%
+    left_join(u_j, by = 'userId')
   
-  g_i = train_set %>%
-    select(rating, genres, m_i, u_i) %>%
+  # Update test set with user effect
+  test_set = test_set %>%
+    select(-u_j) %>%
+    left_join(u_j, by = 'userId')
+  
+  # Remove unecessary data from memory
+  rm(u_j)
+  
+  # Calculate regularized genres effect
+  g_k = train_set %>%
     group_by(genres) %>%
-    summarize(g_i = sum(rating - mean(train_set$rating) - m_i - u_i)/(n() + lambda))
+    summarize(g_k = sum(rating - mean(train_set$rating) - m_i - u_j)/
+                (n() + lambda))
   
+  # Update trainning set with genres effect
   train_set = train_set %>%
-    left_join(g_i, by = 'genres')
+    select(-g_k) %>%
+    left_join(g_k, by = 'genres')
   
-  y_hat <- test_set %>% 
-    left_join(m_i, by = 'movieId') %>%
-    left_join(u_i, by = 'userId') %>%
-    left_join(g_i, by = 'genres') %>%
-    mutate(y_hat = mean(train_set$rating) + m_i + u_i + g_i) %>% .$y_hat
-  
-  tibble(lambda = lambda,RMSE = RMSE(test_set$rating, y_hat))
-})
-beepr::beep(3)
+  # Update test set with genres effect
+  test_set = test_set %>%
+    select(-g_k) %>%
+    left_join(g_k, by = 'genres')
 
+  # Remove unecessary data from memory
+  rm(g_k)
+  
+  # Calculate predictions with regularized predictors
+  y_hat5 = test_set %>% 
+    mutate(y_hat = mean(train_set$rating) + m_i + u_j + g_k) %>% .$y_hat
+  
+  # Returns tibble with current lambda value and resulting RMSE
+  tibble(lambda = lambda, RMSE = RMSE(test_set$rating, y_hat5))
+})
+
+# Plot RMSE against lambda values
+lambda_RMSE %>%
+  t() %>%
+  as_tibble() %>%
+  mutate(lambda = unlist(lambda), RMSE = unlist(RMSE)) %>%
+  ggplot(aes(lambda, RMSE)) +
+  geom_point(fill = 4) +
+  geom_line() + 
+  geom_text_repel(aes(label = sprintf("%0.7f", RMSE)))
 ```
 
+##Sixth model
+
+To the sixth and final model the effect of rating week day was added, already regularized with $\lambda=5$. This predictor was included last because it was not clear if it would actually be a good predictor and reduce the RMSE. Since the RMSE of the sixth model is 0.8568533 with the test set, a significant decrease, the predictor was considered good and this was the model used in validation, discussed in the next section.
+
+```{r}
+# Calculate day effect
+d = train_set %>%
+  group_by(day) %>%
+  summarize(d = sum(rating - mean(train_set$rating) - m_i - u_i - g_i)/
+              (n() + 5))
+
+# Update the training set with day effect
+train_set = train_set %>%
+  left_join(d, by = 'day')
+
+# Update the test set with day effect
+test_set = test_set %>%
+  left_join(d, by = 'day')
+
+# Predictions of the final model
+y_hat6 = test_set %>%
+  mutate(y_hat = mean(train_set$rating) + m_i + u_j + g_k + d) %>% .$y_hat
+
+# RMSE of final model
+RMSE(test_set$rating, y_hat6)
+```
+
+#Results
+
+With the sixth model, RSME decreased to a value lower than 0.86490 using the test set. Before reporting the RMSE with the validation set, some considerations are worth to be drawn regarding the predictions. The following violin plot shows the distribution of the predictions for each rating. Two clear patterns can be observed. The first one is a tendency of the algorithm to underestimate higher values and overestimate lower ones. The second is the higher precision for higher rates and lower precision for lower rates. 
+
+```{r}
+# Generate violin plot of ratings of the test set against predictions from the 
+# sixth model
+tibble(y_hat = y_hat6, y = test_set$rating) %>%
+  ggplot(aes(y_hat, y, group = y)) +
+  geom_violin(fill = 4) +
+  scale_x_continuous(breaks = seq(0, 6, .2)) + 
+  scale_y_continuous(breaks = seq(0, 5, .5)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+The difference between predicted values and the real values have a strong linear relationship with the rating, so probably there are some effect not accounted for by the current algorithm that should be included in the model.
+
+```{r}
+tibble(y_hat = y_hat6, y = test_set$rating) %>%
+  group_by(y) %>%
+  summarize(median = median(y_hat)) %>%
+  mutate(diff = y - median) %>%
+  ggplot(aes(y, diff)) + 
+  geom_point() +
+  geom_smooth(method = 'lm')
+```
+
+To validate the algorithm, the effects were calculated again using the whole edx data set and not only the training set used in modeling. The optimized \lambda was used and the final RMSE is ...
+
+```{r}
+lambda = 5
+
+m_i = edx %>%
+  select(rating, movieId) %>%
+  group_by(movieId) %>%
+  summarize(m_i = sum(rating - mean(edx$rating))/(n() + lambda))
+
+edx = edx %>%
+  left_join(m_i, by = 'movieId')
+
+u_i = edx %>%
+  select(rating, userId, m_i) %>%
+  group_by(userId) %>%
+  summarize(u_i = sum(rating - mean(edx$rating) - m_i)/(n() + lambda))
+
+edx = edx %>%
+  left_join(u_i, by = 'userId')
+
+g_i = edx %>%
+  select(rating, genres, m_i, u_i) %>%
+  group_by(genres) %>%
+  summarize(g_i = sum(rating - mean(edx$rating) - m_i - u_i)/(n() + lambda))
+
+d_r = edx %>%
+  select(rating, rating_wday, m_i, u_i, g_i) %>%
+  group_by(rating_wday) %>%
+  summarize(d_r = sum(rating - mean(edx$rating) - m_i - u_i - g_i)/
+              (n() + lambda))
+
+edx = edx %>%
+  left_join(d_r, by = 'rating_wday')
+
+y_hat_final = validation %>% 
+  left_join(m_i, by = 'movieId') %>%
+  left_join(u_i, by = 'userId') %>%
+  left_join(g_i, by = 'genres') %>%
+  left_join(d_r, by = 'rating_wday') %>%
+  mutate(y_hat = mean(edx$rating) + m_i + u_i + g_i + d_r) %>% .$y_hat
+
+RMSE(validation$rating, y_hat_final)
+beepr::beep(3)
+```
+
+#Conclusion
+
+This report summarized the development of an algorithm that predicts movie ratings from a subset of the movie lens data set considering variability by user, movie, genre (genre combination) and rating day of the week. The final RMSE with the validation set was [...]. Although the algorithm have reached a desired RMSE, some issues were found during development and there are still room for improvement. These questions are summarized in the next section.
+
+##Limitations and suggestions for future work
+
+The main limitation of the present work was the impossibility of using more computationally demanding methods due to memory allocation problems. A search for the error message "cannot allocate vector of size" in stackoverflow.com results 275 r-related questions, which shows that the problem is somehow common. All the efforts to solve the problems were unfruitful, but future work may bring solutions to this issue. Concerning the final algorithm, as was already mentioned, the predictions overestimate small values and underestimate larger ones. Identifying possible causes for this pattern can lead to better predictions. Finally, predictions are more precise with higher ratings. Investigating this pattern can also lead to a more fine tuned algorithm and, thus, better predictions.
+
+#References
