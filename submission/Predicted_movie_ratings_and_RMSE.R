@@ -53,38 +53,56 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 # Set the parameter to the optimized value
 lambda = 5
 
-# Calculate the regularized movie effect
 m_i = edx %>%
-  select(rating, movieId) %>%
   group_by(movieId) %>%
-  summarize(m_i = sum(rating - mean(edx$rating))/(n() + lambda))
+  summarize(m_i = sum(rating - mean(edx$rating))/(n() + 5))
 
-# Join movie effect to the data frame to facilitate the next steps
+# Update data set with movie effect
 edx = edx %>%
-  left_join(m_i, by = 'movieId')
+  left_join(m_i, by = "movieId")
 
-# Calculate the regularized user effect
-u_i = edx %>%
-  select(rating, userId, m_i) %>%
+# Update validation set with movie effect
+validation = validation %>%
+  left_join(m_i, by = "movieId")
+
+# Remove unecessary data from memory
+rm(m_i)
+
+# Calculate user effect with the whole data set
+u_j = edx %>%
   group_by(userId) %>%
-  summarize(u_i = sum(rating - mean(edx$rating) - m_i)/(n() + lambda))
+  summarize(u_j = sum(rating - mean(edx$rating) - m_i)/(n() + 5))
 
-# Join user effect to the data frame to facilitate the next step
+# Update data set with user effect
 edx = edx %>%
-  left_join(u_i, by = 'userId')
+  left_join(u_j, by = "userId")
 
-# Calculate the genres effect
-g_i = edx %>%
-  select(rating, genres, m_i, u_i) %>%
+# Update validation set with user effect
+validation = validation %>%
+  left_join(u_j, by = "userId")
+
+# Remove unecessary data from memory
+rm(u_j)
+
+# Calculate genres effect with the whole data set
+g_k = edx %>%
   group_by(genres) %>%
-  summarize(g_i = sum(rating - mean(edx$rating) - m_i - u_i)/(n() + lambda))
+  summarize(g_k = sum(rating - mean(edx$rating) - m_i - u_j)/(n() + 5))
 
-# Calculate the predictions
+# Update data set with genres effect
+edx = edx %>%
+  left_join(g_k, by = "genres")
+
+# Update validation set with genres effect
+validation = validation %>%
+  left_join(g_k, by = "genres")
+
+# Remove unecessary data from memory
+rm(g_k)
+
+# Calculate predictions
 y_hat = validation %>% 
-  left_join(m_i, by = 'movieId') %>%
-  left_join(u_i, by = 'userId') %>%
-  left_join(g_i, by = 'genres') %>%
-  mutate(y_hat = mean(edx$rating) + m_i + u_i + g_i) %>% .$y_hat
+  mutate(y_hat = mean(edx$rating) + m_i + u_j + g_k) %>% .$y_hat
 
 # Define RMSE functions
 RMSE = function(true_ratings, predicted_ratings){ 

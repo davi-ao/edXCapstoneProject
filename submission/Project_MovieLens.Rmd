@@ -1,26 +1,28 @@
 ---
 title: "Movie recommendation system: Predicting movie ratings in the MovieLens data set"
 author: "Davi Alves Oliveira"
-date: "15/04/2020"
 output: pdf_document
 bibliography: references.bib
 ---
-#Introduction
+# Introduction
 
 This report describes the development of an algorithm, implemented in the R language [@R-base], to predict ratings using a subset of the MovieLens data set. This subset is referred here as the edx data set and contains 9.000.055 ratings of 10677 movies by 69878 users, with six columns, namely 'rating', 'userId', 'movieId', 'timestamp', 'title' and 'genres'. In this analysis, 'rating' is the outcome and the other columns are used either as predictors or to generate new columns that are used as predictors. A detailed description of each column and columns derived from these six original ones is given in the next section (Method).
 
-The code below, provided was part of the course material in the edx platform, was used to create the edx data set.
+The code below, provided as part of the course material in the edx platform, was used to create the edx data set.
 
-```{r}
+```{r message=FALSE, warning=FALSE, results='hide'}
 ################################
 # Create edx set, validation set
 ################################
 
 # Note: this process could take a couple of minutes
 
-if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
-if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) 
+  install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) 
+  install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) 
+  install.packages("data.table", repos = "http://cran.us.r-project.org")
 
 # MovieLens 10M dataset:
 # https://grouplens.org/datasets/movielens/10m/
@@ -29,14 +31,17 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 dl <- tempfile()
 download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
 
-ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
-                 col.names = c("userId", "movieId", "rating", "timestamp"))
+ratings <- fread(
+  text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+  col.names = c("userId", "movieId", "rating", "timestamp"))
 
-movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+movies <- str_split_fixed(
+  readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
 colnames(movies) <- c("movieId", "title", "genres")
-movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
-                                           title = as.character(title),
-                                           genres = as.character(genres))
+movies <- as.data.frame(movies) %>% 
+  mutate(movieId = as.numeric(levels(movieId))[movieId],
+         title = as.character(title),
+         genres = as.character(genres))
 
 movielens <- left_join(ratings, movies, by = "movieId")
 
@@ -44,7 +49,8 @@ movielens <- left_join(ratings, movies, by = "movieId")
 set.seed(1) # set.seed(1, sample.kind="Rounding")
 # if using R 3.5 or earlier, use `set.seed(1)`. Otherwise, use 
 # `set.seed(1, sample.kind="Rounding")`
-test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+test_index <- createDataPartition(
+  y = movielens$rating, times = 1, p = 0.1, list = FALSE)
 edx <- movielens[-test_index,]
 temp <- movielens[test_index,]
 
@@ -63,12 +69,17 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
 The code below, in turn, sets the initial configurations, installing and/or loading the necessary additional packages and setting the theme of the plots.
 
-```{r}
+```{r message=FALSE, warning=FALSE, results='hide'}
 # Install and/or load the necessary packages
-if (!require(lubridate)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-if (!require(magrittr)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-if (!require(ggrepel)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-if (!require(ggthemes)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+# Note: this may take several minutes
+if (!require(lubridate)) 
+  install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if (!require(magrittr)) 
+  install.packages("magrittr", repos = "http://cran.us.r-project.org")
+if (!require(ggrepel)) 
+  install.packages("ggrepel", repos = "http://cran.us.r-project.org")
+if (!require(ggthemes)) 
+  install.packages("ggthemes", repos = "http://cran.us.r-project.org")
 
 # Set the theme for the plots
 theme_set(theme() + theme_hc())
@@ -201,13 +212,13 @@ edx = edx %>%
   ungroup()
 ```
 
-##Years since release
+## Years since release
 
 It is already known that older movies tend to be more rated because of the longer time they are available for rating. Movies with more ratings also tend to be better rated (see Irizarry 2019, sec. 33.8). To visualize if these trends are also observed in the edx data set, a heat map was created with the code below. The right portion of the plot is darker than the left portion, which shows that older movies indeed are rated more frequently, as expected considering the first trend. However, if the trend of movies with more ratings being better rated is present in the data set, it can not be observed with this plot, since there seems to be no clear pattern differing the top portion of the plot from the bottom portion.
 
 *Years since release*
 
-```{r}
+```{r fig.height=4, fig.width=6, dev='png'}
 # Create a heatmap of rating versus years sinc release with fill representing
 # number of ratings
 # Note: plotting may take several minutes
@@ -224,7 +235,7 @@ The next four plots were generated following the same approach as the previous o
 
 *Month of rating*
 
-```{r}
+```{r fig.height=4, fig.width=6, dev='png'}
 # Plot rating against month of rating, with fill representing the number of
 # ratings
 edx %>% 
@@ -237,7 +248,7 @@ edx %>%
 
 *Day of the month*
 
-```{r}
+```{r fig.height=4, fig.width=6, dev='png'}
 # Plot rating against day of the month, with fill representing the number of
 # ratings
 edx %>% 
@@ -250,7 +261,7 @@ edx %>%
 
 *Day of the week*
 
-```{r}
+```{r fig.height=4, fig.width=6, dev='png'}
 # Plot rating against day of the week, with fill representing the number of
 # ratings
 edx %>% 
@@ -263,7 +274,7 @@ edx %>%
 
 *Hour of rating*
 
-```{r}
+```{r fig.height=4, fig.width=6, dev='png'}
 # Plot rating against hour, with fill representing the number of ratings
 edx %>% 
   ggplot(aes(rating_hour, rating, fill = n_ratings)) + 
@@ -273,22 +284,26 @@ edx %>%
     xlab('Hour')
 ```
 
-##Genres
+## Genres
 
-To check a possible effect of genre on rating, a box plot of rating against genre was analyzed. Initially the idea was to analyze the whole data set, but the machine used in the analysis could not handle the task due to lack of memory. With the original edx data set, the code below returns an error message. Thus, after trials with increasingly smaller partitions, the code could run with 15% of the data set. It seems that genre has some effect on rating, with Film-Noir being better rated than Horror, for example.
+To check a possible effect of genre on rating, a box plot of rating against genre was analyzed. Initially the idea was to analyze the whole data set, but the machine used in the analysis could not handle the task due to lack of memory. With the original edx data set, the code below returns an error message. Thus, after trials with increasingly smaller partitions, the code could run with 10% of the data set. It seems that genre has some effect on rating, with Film-Noir being better rated than Horror, for example.
 
 ```{r}
 # Set the seed
 set.seed(2020)
 
+# Generate indexes for partition
+partIndex = createDataPartition(
+  y = edx$rating, times = 1, p = 0.1, list = FALSE) %>% .[,1] %>% as_vector()
+
 # Create subset of data and used it to generate a box plot of rating against
 # genre
-edx[createDataPartition(y = edx$rating, times = 1, p = 0.15, list = FALSE) %>% as_vector(), ] %>% 
+edx[partIndex, ] %>% 
   select(rating, starts_with('is_')) %>% 
   pivot_longer(-rating, names_to = 'genre', values_to = 'is_genre') %>% 
   filter(is_genre == 1) %>% 
   ggplot(aes(reorder(genre, -rating, fun = median), rating)) + 
-    geom_boxplot(fill = 4) + 
+    geom_boxplot(fill = '#132B43') + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ylab('Rating') +
   xlab('Genre')
@@ -310,7 +325,7 @@ edx = edx %>%
 names(edx)
 ```
 
-#Modeling
+# Modeling
 
 Modeling was carried out by using the holdout method of cross validation [@Schneider] with a training set of 90% of the data and testing with the remaining 10% minus the movies and users that were initially in the test set and not in the training set. The following code was used in data partition.
 
@@ -321,7 +336,7 @@ set.seed(2020)
 # Create a partition of 10% of the data and stores the indexes in the
 # 'test_index' vector
 test_index = createDataPartition(
-  y = edx$rating, times = 1, p = 0.1, list = FALSE) %>% .[,1]
+  y = edx$rating, times = 1, p = 0.1, list = FALSE) %>% .[,1] %>% as_vector()
 
 # Save 90% of the data in the train_set data frame and the remaining in the 
 # test_set data frame
@@ -349,7 +364,7 @@ RMSE = function(true_ratings, predicted_ratings){
 
 Several trials were carried out to model the data with the train function of the caret package, but all resulted in memory allocation errors. The code was running in a Windows 10 machine with 8GB of RAM. The function memory.limit() turned the operational system unresponsive. To test if the issue was OS-related, the same trials were repeated on a Linux machine (Ubuntu), also with 8GB of RAM. Since the errors persisted and no solutions could be found, only the models described in sequence could be properly constructed and analyzed.
 
-##First model
+## First model
 
 A first model was created to be used as a baseline for comparison. The first model consists in predicting the rating by the average of ratings. Thus, given a movie $i$ and a user $j$ we have $Y=\mu+\epsilon$, being $Y$ the set of predictions, $\mu$ the mean of ratings and $\epsilon$ the random errors. This model results in a RMSE of 1.060867.
 
@@ -361,7 +376,7 @@ y_hat1 = mean(train_set$rating)
 RMSE(test_set$rating, y_hat1)
 ```
 
-##Second model
+## Second model
 
 The second model includes the effect of movies. As already known and describe in @Irizarry, movies are rated differently because of variability in their qualities. Thus, to the second model is added the movie effect ($m_i$) with $m_i$ being the average of the difference between the mean of ratings and the mean of the particular movie $i$, that is $Y=\mu+m_i+\epsilon$ with $m_i=\frac{1}{N_m}\sum_i^{N_m}Y_{j,i}-\hat{\mu}$. The inclusion of the movie effect reduced the RMSE to 0.9440327.
 
@@ -391,7 +406,7 @@ y_hat2 = mean(train_set$rating) + test_set$m_i
 RMSE(test_set$rating, y_hat2)
 ```
 
-##Third model
+## Third model
 
 The third model adds the effect of users. As already known, different users rate movies differently. User effect is defined as the average rating of the users minus the mean of ratings and the movie effect. The third model is then defined as $Y=\mu+m_i+u_j+\epsilon$ with $u_j=\frac{1}{N_u}\sum_i^{N_u}Y_{i,j}-\hat{\mu}-m_i$. The inclusion of the user effect reduced the RMSE to 0.8657138.
 
@@ -420,7 +435,7 @@ y_hat3 = test_set %>%
 RMSE(test_set$rating, y_hat3)
 ```
 
-##Fourth model
+## Fourth model
 
 The fourth model added genre effects. Initially, the idea was to use the binary variables to do so, which entailed calculating the average rating of each individual genre. However, the code to do so, shown below (Code 1), required more memory than the machine used for analysis could handle, returning a memory allocation error. Thus, the original column genres was used (Code 2), so the effect considered was the effect of the groups of genres. The fourth model is defined as $Y=\mu+m_i+u_j+g_k+\epsilon$ with an effect $g$ for each group of genre, $k$. The inclusion of genres effect reduced the RMSE to 0.8654029.
 
@@ -463,11 +478,11 @@ y_hat4 = test_set %>%
 RMSE(test_set$rating, y_hat4)
 ```
 
-##Fifth model
+## Fifth model
 
-An important characteristic missing in the previous models is regularization. Because the number of ratings varies according to the time the movie is available for release, and because a smaller number ratings results in less precise scorings, ratings need to be regularized according to how many ratings they receive. The column 'years' (formerly years_since_release) would be used for this purpose, but using the actual number of ratings is more appropriate, since it accounts for variability of number of ratings independently of its year of release - not all old movies are famous ones, and there is still variability even account for the year of release.  The fifth model is the same as the previous one, but with the effects being regularized. So, each effect was calculated by dividing the sums by $N+\lambda$. The best value of $\lambda$ was selected based on the value that resulted in the smallest RMSE in interval of 1 to 10. This value was $\lambda=5$, as show in the following plot. With regularization, the RMSE was reduced to 0.8648656 [< 0.86490].
+An important characteristic missing in the previous models is regularization. Because the number of ratings varies according to the time the movie is available for release, and because a smaller number ratings results in less precise scores, ratings need to be regularized according to how many ratings they receive. The column 'years' (formerly years_since_release) would be used for this purpose, but using the actual number of ratings is more appropriate, since it accounts for variability of number of ratings independently of its year of release - not all old movies are famous ones, and there is still variability even account for the year of release.  The fifth model is the same as the previous one, but with the effects being regularized. So, each effect was calculated by dividing the sums by $N+\lambda$. The best value of $\lambda$ was selected based on the value that resulted in the smallest RMSE in interval of 1 to 10. This value was $\lambda=5$, as show in the following plot. With regularization, the RMSE was reduced to 0.8648656.
 
-```{r}
+```{r fig.height=4, fig.width=6, dev='png'}
 # Iterate from 1 to 10 do select the best lambda value
 # For each value of lambda, calculate the regularized predictors, the resulting
 # RMSE and stores in the tibble 'lambda_RMSE'
@@ -546,20 +561,20 @@ lambda_RMSE %>%
   as_tibble() %>%
   mutate(lambda = unlist(lambda), RMSE = unlist(RMSE)) %>%
   ggplot(aes(lambda, RMSE)) +
-  geom_point(fill = 4) +
+  geom_point(color = '#132B43') +
   geom_line() + 
   geom_text_repel(aes(label = sprintf("%0.7f", RMSE)))
 ```
 
-##Sixth model
+## Sixth model
 
-To the sixth and final model the effect of rating week day was added, already regularized with $\lambda=5$. This predictor was included last because it was not clear if it would actually be a good predictor and reduce the RMSE. Since the RMSE of the sixth model is 0.8568533 with the test set, a significant decrease, the predictor was considered good and this was the model used in validation, discussed in the next section.
+To the sixth and final model the effect of rating week day was added, already regularized with $\lambda=5$. This predictor was included last because it was not clear if it would actually be a good predictor and reduce the RMSE. The RMSE of the sixth model was 0.865402 with the test set, a increase of 0.0005364 in comparison with the previous model. Consequently, the predictor was not considered good and the previous model, the fifth one, was used in validation, which is discussed in the next section.
 
 ```{r}
 # Calculate day effect
 d = train_set %>%
   group_by(day) %>%
-  summarize(d = sum(rating - mean(train_set$rating) - m_i - u_i - g_i)/
+  summarize(d = sum(rating - mean(train_set$rating) - m_i - u_j - g_k)/
               (n() + 5))
 
 # Update the training set with day effect
@@ -570,6 +585,9 @@ train_set = train_set %>%
 test_set = test_set %>%
   left_join(d, by = 'day')
 
+# Remove unecessary data from memory
+rm(d)
+
 # Predictions of the final model
 y_hat6 = test_set %>%
   mutate(y_hat = mean(train_set$rating) + m_i + u_j + g_k + d) %>% .$y_hat
@@ -578,16 +596,79 @@ y_hat6 = test_set %>%
 RMSE(test_set$rating, y_hat6)
 ```
 
-#Results
-
-With the sixth model, RSME decreased to a value lower than 0.86490 using the test set. Before reporting the RMSE with the validation set, some considerations are worth to be drawn regarding the predictions. The following violin plot shows the distribution of the predictions for each rating. Two clear patterns can be observed. The first one is a tendency of the algorithm to underestimate higher values and overestimate lower ones. The second is the higher precision for higher rates and lower precision for lower rates. 
+The following code is the same used in the function to select the best value of $\lambda$, but with the value set to 5. This step is necessary to generate the predictions of the fifth model that will be analyzed in the next section.
 
 ```{r}
+# Calculate regularized movie effect
+m_i = train_set %>%
+  group_by(movieId) %>%
+  summarize(m_i = sum(rating - mean(train_set$rating))/(n() + 5))
+
+# Update training set with movie effect
+train_set = train_set %>%
+  select(-m_i) %>%
+  left_join(m_i, by = 'movieId')
+
+# Update test set with movie effect
+test_set = test_set %>%
+  select(-m_i) %>%
+  left_join(m_i, by = 'movieId')
+
+# Remove unecessary data from memory
+rm(m_i)
+
+# Calculate regularized user effect
+u_j = train_set %>%
+  group_by(userId) %>%
+  summarize(u_j = sum(rating - mean(train_set$rating) - m_i)/(n() + 5))
+
+# Update training set with user effect
+train_set = train_set %>%
+  select(-u_j) %>%
+  left_join(u_j, by = 'userId')
+
+# Update test set with user effect
+test_set = test_set %>%
+  select(-u_j) %>%
+  left_join(u_j, by = 'userId')
+
+# Remove unecessary data from memory
+rm(u_j)
+
+# Calculate regularized genres effect
+g_k = train_set %>%
+  group_by(genres) %>%
+  summarize(g_k = sum(rating - mean(train_set$rating) - m_i - u_j)/
+              (n() + 5))
+
+# Update trainning set with genres effect
+train_set = train_set %>%
+  select(-g_k) %>%
+  left_join(g_k, by = 'genres')
+
+# Update test set with genres effect
+test_set = test_set %>%
+  select(-g_k) %>%
+  left_join(g_k, by = 'genres')
+
+# Remove unecessary data from memory
+rm(g_k)
+
+# Calculate predictions of final model
+y_hat5 = test_set %>% 
+  mutate(y_hat = mean(train_set$rating) + m_i + u_j + g_k) %>% .$y_hat
+```
+
+# Results
+
+With the fifth model, RSME decreased to a value only 0.0000344 smaller than 0.86490, using the test set. Before reporting the RMSE with the validation set, some considerations are worth to be drawn regarding the predictions. The following violin plot shows the distribution of the predictions for each rating. Two clear patterns can be observed. The first one is a tendency of the algorithm to underestimate higher values and overestimate lower ones. The second is the higher precision for higher rates and lower precision for lower rates. 
+
+```{r fig.height=4, fig.width=6, dev='png'}
 # Generate violin plot of ratings of the test set against predictions from the 
-# sixth model
-tibble(y_hat = y_hat6, y = test_set$rating) %>%
+# fifth model
+tibble(y_hat = y_hat5, y = test_set$rating) %>%
   ggplot(aes(y_hat, y, group = y)) +
-  geom_violin(fill = 4) +
+  geom_violin(fill = '#132B43') +
   scale_x_continuous(breaks = seq(0, 6, .2)) + 
   scale_y_continuous(breaks = seq(0, 5, .5)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
@@ -595,68 +676,80 @@ tibble(y_hat = y_hat6, y = test_set$rating) %>%
 
 The difference between predicted values and the real values have a strong linear relationship with the rating, so probably there are some effect not accounted for by the current algorithm that should be included in the model.
 
-```{r}
-tibble(y_hat = y_hat6, y = test_set$rating) %>%
+```{r fig.height=4, fig.width=6, dev='png'}
+tibble(y_hat = y_hat5, y = test_set$rating) %>%
   group_by(y) %>%
   summarize(median = median(y_hat)) %>%
   mutate(diff = y - median) %>%
   ggplot(aes(y, diff)) + 
   geom_point() +
-  geom_smooth(method = 'lm')
+  geom_smooth(method = 'lm', color = '#132B43')
 ```
 
-To validate the algorithm, the effects were calculated again using the whole edx data set and not only the training set used in modeling. The optimized \lambda was used and the final RMSE is ...
+To validate the algorithm, the effects were calculated again using the whole edx data set and not only the training set used in modeling. The optimized $\lambda$ was used (5) and the final RMSE is 0.8644501, 0.0004499 smaller than 0.86490.
 
 ```{r}
-lambda = 5
-
+# Calculate movie effect with the whole data set
 m_i = edx %>%
-  select(rating, movieId) %>%
   group_by(movieId) %>%
-  summarize(m_i = sum(rating - mean(edx$rating))/(n() + lambda))
+  summarize(m_i = sum(rating - mean(edx$rating))/(n() + 5))
 
+# Update data set with movie effect
 edx = edx %>%
-  left_join(m_i, by = 'movieId')
+  left_join(m_i, by = "movieId")
 
-u_i = edx %>%
-  select(rating, userId, m_i) %>%
+# Update validation set with movie effect
+validation = validation %>%
+  left_join(m_i, by = "movieId")
+
+# Remove unecessary data from memory
+rm(m_i)
+
+# Calculate user effect with the whole data set
+u_j = edx %>%
   group_by(userId) %>%
-  summarize(u_i = sum(rating - mean(edx$rating) - m_i)/(n() + lambda))
+  summarize(u_j = sum(rating - mean(edx$rating) - m_i)/(n() + 5))
 
+# Update data set with user effect
 edx = edx %>%
-  left_join(u_i, by = 'userId')
+  left_join(u_j, by = "userId")
 
-g_i = edx %>%
-  select(rating, genres, m_i, u_i) %>%
+# Update validation set with user effect
+validation = validation %>%
+  left_join(u_j, by = "userId")
+
+# Remove unecessary data from memory
+rm(u_j)
+
+# Calculate genres effect with the whole data set
+g_k = edx %>%
   group_by(genres) %>%
-  summarize(g_i = sum(rating - mean(edx$rating) - m_i - u_i)/(n() + lambda))
+  summarize(g_k = sum(rating - mean(edx$rating) - m_i - u_j)/(n() + 5))
 
-d_r = edx %>%
-  select(rating, rating_wday, m_i, u_i, g_i) %>%
-  group_by(rating_wday) %>%
-  summarize(d_r = sum(rating - mean(edx$rating) - m_i - u_i - g_i)/
-              (n() + lambda))
-
+# Update data set with genres effect
 edx = edx %>%
-  left_join(d_r, by = 'rating_wday')
+  left_join(g_k, by = "genres")
 
+# Update validation set with genres effect
+validation = validation %>%
+  left_join(g_k, by = "genres")
+
+# Remove unecessary data from memory
+rm(g_k)
+
+# Calculate final predictions
 y_hat_final = validation %>% 
-  left_join(m_i, by = 'movieId') %>%
-  left_join(u_i, by = 'userId') %>%
-  left_join(g_i, by = 'genres') %>%
-  left_join(d_r, by = 'rating_wday') %>%
-  mutate(y_hat = mean(edx$rating) + m_i + u_i + g_i + d_r) %>% .$y_hat
+  mutate(y_hat = mean(edx$rating) + m_i + u_j + g_k) %>% .$y_hat
 
 RMSE(validation$rating, y_hat_final)
-beepr::beep(3)
 ```
 
-#Conclusion
+# Conclusion
 
-This report summarized the development of an algorithm that predicts movie ratings from a subset of the movie lens data set considering variability by user, movie, genre (genre combination) and rating day of the week. The final RMSE with the validation set was [...]. Although the algorithm have reached a desired RMSE, some issues were found during development and there are still room for improvement. These questions are summarized in the next section.
+This report summarized the development of an algorithm that predicts movie ratings from a subset of the movie lens data set considering variability by user, movie, genre (genre combination) and day of the week of rating. The final RMSE with the validation set was [...]. Although the algorithm have reached a desired RMSE, some issues were found during development and there are still room for improvement. These questions are summarized in the next section.
 
-##Limitations and suggestions for future work
+## Limitations and suggestions for future work
 
-The main limitation of the present work was the impossibility of using more computationally demanding methods due to memory allocation problems. A search for the error message "cannot allocate vector of size" in stackoverflow.com results 275 r-related questions, which shows that the problem is somehow common. All the efforts to solve the problems were unfruitful, but future work may bring solutions to this issue. Concerning the final algorithm, as was already mentioned, the predictions overestimate small values and underestimate larger ones. Identifying possible causes for this pattern can lead to better predictions. Finally, predictions are more precise with higher ratings. Investigating this pattern can also lead to a more fine tuned algorithm and, thus, better predictions.
+The main limitation of the present work was the impossibility of using more computationally demanding methods due to memory allocation problems. A search for the error message "cannot allocate vector of size" in stackoverflow.com results 275 r-related questions, which shows that the problem is somehow common. All the efforts to solve the problems were unfruitful, but future work may bring solutions to this issue. Concerning the final model, as was already mentioned, the predictions overestimate small values and underestimate larger ones. Identifying possible causes for this pattern can lead to better predictions. Finally, predictions are more precise with higher ratings. Investigating this pattern can also lead to a better fine tuned model and, thus, better predictions.
 
-#References
+# References
