@@ -55,7 +55,7 @@ lambda = 5
 
 m_i = edx %>%
   group_by(movieId) %>%
-  summarize(m_i = sum(rating - mean(edx$rating))/(n() + 5))
+  summarize(m_i = sum(rating - mean(edx$rating))/(n() + lambda))
 
 # Update data set with movie effect
 edx = edx %>%
@@ -71,7 +71,7 @@ rm(m_i)
 # Calculate user effect with the whole data set
 u_j = edx %>%
   group_by(userId) %>%
-  summarize(u_j = sum(rating - mean(edx$rating) - m_i)/(n() + 5))
+  summarize(u_j = sum(rating - mean(edx$rating) - m_i)/(n() + lambda))
 
 # Update data set with user effect
 edx = edx %>%
@@ -87,7 +87,7 @@ rm(u_j)
 # Calculate genres effect with the whole data set
 g_k = edx %>%
   group_by(genres) %>%
-  summarize(g_k = sum(rating - mean(edx$rating) - m_i - u_j)/(n() + 5))
+  summarize(g_k = sum(rating - mean(edx$rating) - m_i - u_j)/(n() + lambda))
 
 # Update data set with genres effect
 edx = edx %>%
